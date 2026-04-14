@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class FirebaseService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -29,50 +30,52 @@ class FirebaseService {
     try {
       print("Starting Google Sign-in...");
 
-      // For Web: Use Firebase Auth directly
-      // For Mobile: Use Google Sign-In package
-      try {
-        final result = await _auth.signInWithPopup(GoogleAuthProvider());
-        print("Firebase popup sign-in successful: ${result.user?.email}");
-        return result.user;
-      } catch (webError) {
-        print("Web popup failed: $webError, trying app method...");
-
-        // Fallback to GoogleSignIn for Web (if package is available)
-        final GoogleSignIn googleSignIn = GoogleSignIn(
-          scopes: ['email', 'profile'],
-          forceCodeForRefreshToken: true,
-        );
-
-        final googleUser = await googleSignIn.signIn();
-
-        // User cancelled the sign-in
-        if (googleUser == null) {
-          print("Google Sign-in cancelled by user");
-          return null;
+      if (kIsWeb) {
+        try {
+          final result = await _auth.signInWithPopup(GoogleAuthProvider());
+          print("Firebase popup sign-in successful: ${result.user?.email}");
+          return result.user;
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'popup-closed-by-user') {
+            print("Google Sign-in cancelled by user");
+            return null;
+          }
+          rethrow;
         }
-
-        print("Google user signed in: ${googleUser.email}");
-
-        final googleAuth = await googleUser.authentication;
-
-        if (googleAuth.accessToken == null) {
-          throw Exception("Failed to get access token from Google");
-        }
-
-        print("Got authentication tokens from Google");
-
-        final credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-
-        print("Signing in to Firebase with credential...");
-        final res = await _auth.signInWithCredential(credential);
-
-        print("Firebase user signed in: ${res.user?.email}");
-        return res.user;
       }
+
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+      );
+
+      final googleUser = await googleSignIn.signIn();
+
+      // User cancelled the sign-in
+      if (googleUser == null) {
+        print("Google Sign-in cancelled by user");
+        return null;
+      }
+
+      print("Google user signed in: ${googleUser.email}");
+
+      final googleAuth = await googleUser.authentication;
+
+      if (googleAuth.accessToken == null) {
+        throw Exception("Failed to get access token from Google");
+      }
+
+      print("Got authentication tokens from Google");
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      print("Signing in to Firebase with credential...");
+      final res = await _auth.signInWithCredential(credential);
+
+      print("Firebase user signed in: ${res.user?.email}");
+      return res.user;
     } on FirebaseAuthException catch (e) {
       print("Firebase Auth Error: ${e.code} - ${e.message}");
       rethrow;
